@@ -32,7 +32,7 @@ search = SearchEngine(simple_zipcode=False)  # zipcode demographics lookup
 unknown_names = open(r"C:/Users/Kindl/OneDrive/Documents/Amateur-Radio-Demographics/unknown_names.dat", "w+")
 
 try:
-    with open('C:/Users/Kindl/OneDrive/Documents/Amateur-Radio-Demographics/EN-clean .dat', 'r') as my_file:
+    with open('C:/Users/Kindl/OneDrive/Documents/Amateur-Radio-Demographics/EN.dat', 'r') as my_file:
         # pass
 
         male_count = 0
@@ -154,7 +154,8 @@ try:
 
 
 
-                if (my_list[8] == ".") or (my_list[8] == ",") or (my_list[8] == ""):  # can't analyze these for name
+                if (my_list[8].startswith('(')) or (my_list[8] == ".") or (my_list[8] == ",") or (my_list[8] == ""):
+                    # can't analyze these for name
                     punch_count += 1
                 else:
                     # print(my_line)
