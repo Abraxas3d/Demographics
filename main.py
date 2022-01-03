@@ -202,7 +202,7 @@ try:
               "black:", black_count,
               "american indian alaskan native:", american_indian_count,
               "asian:", asian_count,
-              "native american or pacific islander:", hawaiian_count,
+              "native Hawaiian or pacific islander:", hawaiian_count,
               "other:", other_race_count,
               "two or more races:", two_or_more_count,
               "zipcode fail:", zipcode_fail,
