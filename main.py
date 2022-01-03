@@ -1,9 +1,10 @@
-from typing import List
+import os
+import random
+import webbrowser
 
+import folium
 from gender_detector.gender_detector import GenderDetector
 from uszipcode import SearchEngine
-import random
-
 
 active_licenses = set()
 
@@ -32,7 +33,7 @@ search = SearchEngine(simple_zipcode=False)  # zipcode demographics lookup
 unknown_names = open(r"C:/Users/Kindl/OneDrive/Documents/Amateur-Radio-Demographics/unknown_names.dat", "w+")
 
 try:
-    with open('C:/Users/Kindl/OneDrive/Documents/Amateur-Radio-Demographics/EN.dat', 'r') as my_file:
+    with open('C:/Users/Kindl/OneDrive/Documents/Amateur-Radio-Demographics/EN-wed.dat', 'r') as my_file:
         # pass
 
         male_count = 0
@@ -56,6 +57,8 @@ try:
         prob_two_or_more = 0.0
         zipcode_fail = 0
         total_count = 0
+        heat_map_array = [0] * 99950
+
 
         for my_line in my_file:
             my_list: list[str] = my_line.split("|")  # bust up the line at the | symbols, makes a list
@@ -148,8 +151,7 @@ try:
                         print("You have fallen through the race test crack.")
                         print("Random number is:", random_number)
 
-
-
+                    heat_map_array[int(my_list[18][:5])] += 1
 
 
 
@@ -195,9 +197,9 @@ try:
                 # print("other license type: ", my_list[8])
 
         print("female:", female_count,
-              "male", male_count,
-              "unknown", unknown_count,
-              "punched out", punch_count)
+              "male:", male_count,
+              "unknown:", unknown_count,
+              "punched out:", punch_count)
         print("white:", white_count,
               "black:", black_count,
               "american indian alaskan native:", american_indian_count,
@@ -209,11 +211,44 @@ try:
               "total race count:", (white_count + black_count + american_indian_count + asian_count + hawaiian_count + other_race_count + two_or_more_count + zipcode_fail))
         print("total count:", total_count,
               "other license type", other_count)
+        #print("Zip code array: ", heat_map_array)
 
     my_file.close()
     unknown_names.close()
 
+    #url = ("https://raw.githubusercontent.com/python-visualzation/folium/master/examples/data")
+    #geo_file_location = os.path.join("C:", "Users", "Kindl", "OneDrive", "Documents", "Amateur-Radio-Demographics", "zip-codes-geo-json", "State-zip-code-GeoJSON-master", "ca_california_zip_codes_geo.min.json")
+    #zip_geo = "ca_california_zip_codes_geo.json"
 
+    #zip_geo="92130.geojson" #worked
+    #zip_geo="SanDiego.geojson" #worked
+    zip_geo="ca_california_zip_codes.geojson" #worked sort of? missing
+
+    #print(geo_file_location)
+
+
+
+    m = folium.Map(location=[33, -117], zoom_start=9)
+    #m = folium.Map()
+
+    #folium.GeoJson(zip_geo).add_to(m) #worked
+    #folium.LayerControl().add_to(m) #worked
+
+
+    folium.Choropleth(
+        geo_data=zip_geo,
+        name="chloropleth",
+        #data=heat_map_array,
+        #columns="zipcode", "licensees",
+        #key_on="feature_id",
+        fill_color="YlGnBu",
+        fill_opacity=0.2,
+        line_opacity=0.8,
+    ).add_to(m)
+
+
+    m.save('heatmap.html')
+    webbrowser.open('heatmap.html', new=2)
 
 except FileNotFoundError:
     pass
