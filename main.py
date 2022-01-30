@@ -147,18 +147,6 @@ class EN(FCCTable):
             "U":"Unincorporated Association",
             }
 
-class ULS:
-    pass
-
-class licensee:
-    def __init__(self, uid):
-        self.uid = uid
-    def get(self):
-        """
-        select HD.id, HD.callsign, HD.licensestatus, where HD.radioservicecode in ('HV','HA')
-        """
-
-
 
 def create_db(dbcon): 
     db = dbcon.cursor()
@@ -313,11 +301,13 @@ def import_table(dbcon, table):
 def import_data(dbcon):
 
     #if you get no such table here, you need to start fresh on DB
+    #likewise if you want to update from fresh database dumps, rm the db 
     import_table(dbcon, "AM")
     import_table(dbcon, "HD")
     import_table(dbcon, "EN")
 
-class LicenseeRow(sqlite3.Row):
+class LicenseeRow(sqlite3.Row): 
+    #Row is really fast with low overhead. We ruin that a bit by allowing dot access and overriding the __str__ method so it prints something sane to the screen
     def __str__(self):
         s = ""
         for k in self.keys():
@@ -340,21 +330,29 @@ def query(dbcon, q):
 
 
 def main():
+    if len(sys.argv) < 2:
+        print("Provide the states you want on the command line as two-letter abbreviations")
+        print("Like so: python main.py MA NH ME")
+        print("(Don't go over four states or so)")
+        sys.exit(1)
+    states = sys.argv[1:] #provide the states you want on the command line like "python main.py MA NH ME"
     mustcreatedb = not os.path.isfile("uls.db")
     dbcon = sqlite3.connect('uls.db')
-    dbcon.row_factory = LicenseeRow
+    dbcon.row_factory = LicenseeRow #each row returned should be of this class
     if mustcreatedb:
         create_db(dbcon)
     import_data(dbcon)
     active_licenses = set()
     db = dbcon.cursor()
+
     # s="select HD.callsign, EN.firstname, EN.lastname, AM.operatorclass from HD inner join EN on HD.id=EN.id inner join AM on HD.id=AM.id where "+\
         # "HD.radioservicecode in ('HV','HA') and HD.licensestatus='A' and EN.entitytype='L' and EN.applicanttypecode='I' and EN.city='Chelmsford' and EN.state='MA'"
     # query(dbcon,s)
     # import pdb; pdb.set_trace()
+
     s="select HD.callsign, EN.firstname, EN.city, EN.state, EN.zipcode from HD inner join EN on HD.id=EN.id where "+\
         "HD.radioservicecode in ('HV','HA') and HD.licensestatus='A' and EN.entitytype='L' and EN.applicanttypecode='I'"+\
-        "and EN.state in ('MA','NH')"
+        "and EN.state in ("+("?,"*len(states))[:-1] + ")"
         # "and EN.state in ('MA','NH','ME','CT','RI','NY')"
         # "and EN.state in ('FL','AL','GA','MS','SC','LA')"
         # "and EN.state in ('FL','AL','GA','MS','SC','NC','LA','TN','AR')"
@@ -367,43 +365,19 @@ def main():
 
     i = 0
     err=0
-    with open("us-states.json","r") as fd:
-        statedata=json.load(fd)
-    stateabbr = {
-            "new-hampshire":"NH",
-            "massachusetts":"MA",
-            # "maine":"ME",
-            # "vermont":"VT",
-            # "new-york":"NY",
-            # "rhode-island":"RI",
-            # "connecticut":"CT",
-            # "florida":"FL",
-            # "alabama":"AL",
-            # "georgia":"GA",
-            # "mississippi":"MS",
-            # "louisiana":"LA",
-            # "south-carolina":"SC",
-            # "north-carolina":"NC",
-            # "tennessee":"TN",
-            # "arkansas":"AR",
-            # "texas":"TX",
-            }
-    statepops2019 = {}
-    for obj in statedata:
-        if obj["Slug State"] in stateabbr and obj["ID Year"] == 2019:
-            statepops2019[stateabbr[obj["Slug State"]]] = obj["Population"]
-
-    for row in db.execute(s):
+    for row in db.execute(s, states):
         # print(row)
         zc = search.by_zipcode(row.zipcode[:5])
-        if not zc or zc.population is None:
+        if not zc:
             # print("no zc for row.zipcode?", row.zipcode)
             # errors.append(row)
             err+=1
             continue
-        if zc.state not in stateabbr.values():
-            #some of our data is bad and the zip code doesn't match the state
-            #either in our zip code db or the fcc db
+        #not all zipcodes have population - about 10 times as many as we don't have zipcode entries for at all
+        #similarly some of our data is bad and the zip code doesn't match the state
+        #either in our zip code db or the fcc db. Not sure which. So just be aware of that.
+        if zc.state != row.state: #drop the mismatched zip-states here so we don't load in hundreds of MB of other state maps
+            err+=1
             continue
         if zc.state not in heat_map_dictionary:
             heat_map_dictionary[zc.state] = {}
@@ -412,38 +386,29 @@ def main():
         heat_map_dictionary[zc.state][zc.zipcode] += 1
         i+=1
         # if i > 10000:
-            # break
+            # break #want faster testing? uncomment
         if i % 10000 == 0:
-            print(i)
-    print("errs: ",err)
+            print(i) #just a progress update
+    print("Rows with mismatched zipcode data or where zipcode isn't in our database: ",err)
 
+    #TODO: global color scaling
     #TODO: race data where available
     #TODO: gender guessing
 
-    m = folium.Map(location=[40, -70], zoom_start=5, tiles='Stamen Toner')
-    # for state in heat_map_dictionary:
-        # for zipcode in heat_map_dictionary[state]:
-            # heat_map_dictionary[state][zipcode] = heat_map_dictionary[state][zipcode]/330000000
+    m = folium.Map(location=[40, -80], zoom_start=4, tiles='Stamen Toner')
     for state in heat_map_dictionary:
         print("adding", state)
         heat_map_dataframe = pd.DataFrame.from_dict(heat_map_dictionary[state], orient='index').reset_index()
         heat_map_dataframe.columns = ['ZCTA5CE10', 'licensees'] #column headings for ca_california_zip_codes.geojson
-        # stategeojson=glob.glob("State-zip-code-GeoJSON/%s*.simple.topojson"%(state.lower()))
         stategeojson=glob.glob("State-zip-code-GeoJSON/%s*.min.json"%(state.lower()))
-        """
-        for each in State-zip-code-GeoJSON/*.min.json; do echo $each; ./node_modules/topojson-server/bin/geo2topo $each -o $each.topojson; ./node_modules/topojson-simplify/bin/toposimplify -F $each.topojson -o $each.simple.topojson; done
-State-zip-code-GeoJSON/ak_alaska
-    """
 
         if len(stategeojson):
             zip_geo = stategeojson[0]
             print(zip_geo)
             folium.Choropleth(
                 geo_data=zip_geo,
-                name=state,
+                name=state, #this sets the layer name in the layer control
                 data=heat_map_dataframe,
-                #columns=['zip', 'licensees'],
-                #key_on='feature.properties.zip',
                 columns=["ZCTA5CE10", "licensees"],
                 key_on="feature.properties.ZCTA5CE10",
                 fill_color="YlGn",
@@ -455,10 +420,11 @@ State-zip-code-GeoJSON/ak_alaska
             print("no zip codes outline for ", state)
     folium.LayerControl().add_to(m)
     m.save('heatmap.html')
+    webbrowser.open('heatmap.html', new=2)
 
 
-main()
-sys.exit(0)
+if __name__ == "__main__":
+    main()
 
 # unknown_names = open("generated/unknown_names.dat", "w+")
 
@@ -469,6 +435,7 @@ def xyDatatoDict(valuearray):
     #                                 {'x': 'Native Hawaiian & Other Pacific Islander', 'y': 2},
     #                                 {'x': 'Other Race', 'y': 46}, {'x': 'Two Or More Races', 'y': 154}]}]
     return {x:y for x,y in valuearray}
+    #untested
 
 
 """
