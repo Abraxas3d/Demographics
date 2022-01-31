@@ -1,85 +1,446 @@
 import os
+import sys
+import glob
+import json
 import random
 import webbrowser
 
 import folium
 import pandas as pd
 from gender_detector.gender_detector import GenderDetector
-from uszipcode import SearchEngine
+import uszipcode 
+import sqlite3
 
-active_licenses = set()
+class dattr(dict):
+    """
+    "dict-attr", used for when you don't want to type [""] all the time
+    """
+    def __getattr__(self,name):
+        """
+        With a dattr, you can do this:
+        >>> x = dattr({"abc":True})
+        >>> x.abc
+        True
 
-try:
-    with open('C:/Users/Kindl/OneDrive/Documents/Amateur-Radio-Demographics/HD.dat', 'r') as headers:
-        # pass
-        for active_line in headers:
-            active_list: list[str] = active_line.split("|")  # bust up the line at the | symbols, makes a list
+        """
+        if type(self[name]) == type({}): 
+            #make sure we wrap any nested dicts when we encounter them
+            self[name] = dattr(self[name]) #has to assign to save any changes to nested dattrs
+            #e.g.  x.abc.fed = "in" 
+        #otherwise just make our key,value pairs accessible through . (e.g. x.name)
+        return self[name]
+    def __setattr__(self,name,value):
+        """
+        With a dattr, you can do this:
 
-            if (active_list[5] == "A"):  # active licenses
-                active_licenses.add(active_list[4])
+        >>> x = dattr({"abc":True})
+        >>> x.abc = False
+        >>> x.abc
+        False
+        """
+        self[name] = value
 
-except FileNotFoundError:
+class FCCTable:
     pass
+class AD(FCCTable):
+    applicationpurpose_codes = {
+            "AA":"Assignment of Authorization",
+            "AM":"Amendment",
+            "AR":"DE Annual Report",
+            "AU":"Administrative Update",
+            "CA":"Cancellation of License",
+            "CB":"C Block Election",
+            "DC":"Data Correction",
+            "DU":"Duplicate License",
+            "EX":"Request for Extension of Time",
+            "HA":"HAC Report",
+            "LC":"Cancel a Lease",
+            "LE":"Extend Term of a Lease",
+            "LL":"'603T', no longer used",
+            "LM":"Modification of a Lease",
+            "LN":"New Lease",
+            "LT":"Transfer of Control of a Lessee",
+            "LU":"Administrative Update of a Lease",
+            "MD":"Modification",
+            "NE":"New",
+            "NT":"Required Notification",
+            "RE":"DE Reportable Event",
+            "RL":"Register Link/Location",
+            "RM":"Renewal/Modification",
+            "RO":"Renewal Only",
+            "TC":"Transfer of Control",
+            "WD":"Withdrawal of Application",
+            }
+    applicationstatus_codes = {
+            "1":"Submitted",
+            "2":"Pending",
+            "A":"A Granted",
+            "C":"Consented To",
+            "D":"Dismissed",
+            "E":"Eliminate",
+            "G":"Granted",
+            "H":"History Only",
+            "I":"Inactive",
+            "J":"HAC Submitted",
+            "K":"Killed",
+            "M":"Consummated",
+            "N":"Granted in Part",
+            "P":"Pending Pack Filing",
+            "Q":"Accepted",
+            "R":"Returned",
+            "S":"Saved",
+            "T":"Terminated",
+            "U":"Unprocessable",
+            "W":"Withdrawn",
+            "X":"NA",
+            "Y":"Application has problems",
+            }
+class AM(FCCTable):
+    operatorclass_codes = {
+            "A":"Advanced",
+            "E":"Amateur Extra",
+            "G":"General",
+            "N":"Novice",
+            "P":"Technician Plus",
+            "T":"Technician",
+    }
+
+class HD(FCCTable):
+    licensestatus_codes = {
+            "A":"Active",
+            "C":"Canceled",
+            "E":"Expired",
+            "L":"Pending Legal Status",
+            "P":"Parent Station Canceled",
+            "T":"Terminated",
+            "X":"Term Pending",
+            }
+class EN(FCCTable):
+    entitytype_codes = {
+            "CE":"Transferee contact",
+            "CL":"Licensee Contact",
+            "CR":"Assignor or Transferor Contact",
+            "CS":"Lessee Contact",
+            "E":"Transferee",
+            "L":"Licensee or Assignee",
+            "O":"Owner",
+            "R":"Assignor or Transferor",
+            "S":"Lessee",
+            }
+
+    applicanttypecode_codes = {
+            "B":"Amateur Club",
+            "C":"Corporation",
+            "D":"General Partnership",
+            "E":"Limited Partnership",
+            "F":"Limited Liability Partnership",
+            "G":"Governmental Entity",
+            "H":"Other",
+            "I":"Individual",
+            "J":"Joint Venture",
+            "L":"Limited Liability Company",
+            "M":"Military Recreation",
+            "O":"Consortium",
+            "P":"Partnership",
+            "R":"RACES",
+            "T":"Trust",
+            "U":"Unincorporated Association",
+            }
 
 
-# print(active_licenses)
+def create_db(dbcon): 
+    db = dbcon.cursor()
+    db.execute('''CREATE TABLE HD (
+            id integer, 
+            ulsfilenum text,
+            ebfnum text,
+            callsign text,
+            licensestatus text,
+            radioservicecode text,
+            grantdate text,
+            expireddate text,
+            cancellationdate text,
+            eligibilityrulenum text,
+            reserved text,
+            alien text,
+            aliengov text,
+            aliencorp text,
+            alienofficer text,
+            aliencontrol text,
 
-# we now have a set of active licenses
+            revoked text,
+            convicted text,
+            adjudged text,
+            reserved2 text,
+            commoncarrier text,
+            noncommoncarrier text,
+            privatecomm text,
+            fixed text,
+            mobile text,
+            radiolocation text,
+            satellite text,
+            developmentalorstaordemonstration text,
+            interconnectedservice text,
+
+            certifierfirstname text,
+            certifiermi text,
+            certifierlastname text,
+            certifiersuffix text,
+            certifiertitle text,
+
+            female text,
+            black text,
+            nativeamerican text,
+            hawaiian text,
+            asian text,
+            white text,
+            hispanic text,
+
+            effectivedate text,
+            lastactiondate text,
+
+            auctionid integer,
+            broadcastregstat text,
+            bandmanagerregstat text,
+            broadcastservicetype text,
+            alienruling text,
+            licenseenamechange text,
+            whitespaceindicator text,
+            operationperformancereqchoice text,
+            operationperformancereqanswer text,
+            discontinuationofservice text,
+            regulatorycompliance text,
+
+            eligibilitycert900mhz text,
+            transitionplancert900mhz text,
+            returnspectrumcert900mhz text,
+            paymentcert900mhz text
+            )''')
+    db.execute('''CREATE TABLE EN 
+            (
+            id integer, 
+            ulsfilenum text,
+            ebfnum text,
+            callsign text,
+            entitytype text,
+            licenseeid text,
+            entityname text,
+            firstname text,
+            middleinitial text,
+            lastname text,
+            suffix text,
+            phone text,
+            fax text,
+            email text,
+            streetaddress text,
+            city text,
+            state text,
+            zipcode text,
+            pobox text,
+            attnline text,
+            SGIN text,
+            FRN text,
+            applicanttypecode text,
+            applicanttypecodeother text,
+            statuscode text,
+            statusdata text,
+            licensetype3g7 text,
+            linkedid integer,
+            linkedcallsign text
+            )''')
+    db.execute('''CREATE TABLE AM
+            (
+            id integer, 
+            ulsfilenum text,
+            ebfnum text,
+            callsign text,
+            operatorclass text,
+            groupcode text,
+            regioncode integer,
+            trusteecallsign text,
+            trusteeindicator text,
+            physiciancertification text,
+            vesignature text,
+            systematiccallsignchange text,
+            vanitycallsignchange text,
+            vanityrelationship text,
+            previouscallsign text,
+            previousoperatorclass text,
+            trusteename text
+            )''')
+    db.execute('''CREATE TABLE VC
+            (
+            id integer, 
+            ulsfilenum text,
+            ebfnum text,
+            orderofpreference integer,
+            requestedcallsign text
+            )''')
+    dbcon.commit()
+
+def import_table(dbcon, table):
+    db = dbcon.cursor()
+    db.execute("select count(*) from %s"%(table)) #table name must be trusted
+    rowcnt = db.fetchone()[0]
+    if not rowcnt:
+        with open('data/%s.dat'%(table), 'r') as fd:
+            #not great because readlines reads the whole file at once.
+            rows = [line.strip().split('|')[1:] for line in fd.readlines()]
+            #strip it so the string doesn't have a newline
+            #split it into a list of columns (FCC db dump uses the pipe as a field separator)
+            #remove the first column value because we already know it's "AM" for AM rows, "HD" for HD rows, etc
+
+            #table name must be trusted
+            s = "INSERT INTO %s VALUES ("%(table) + ("?,"*len(rows[0]))[:-1] + ")"
+            db.executemany(s, rows)
+
+        dbcon.commit()
+    else:
+        print("already imported ", table)
+
+def import_data(dbcon):
+
+    #if you get no such table here, you need to start fresh on DB
+    #likewise if you want to update from fresh database dumps, rm the db 
+    import_table(dbcon, "AM")
+    import_table(dbcon, "HD")
+    import_table(dbcon, "EN")
+
+class LicenseeRow(sqlite3.Row): 
+    #Row is really fast with low overhead. We ruin that a bit by allowing dot access and overriding the __str__ method so it prints something sane to the screen
+    def __str__(self):
+        s = ""
+        for k in self.keys():
+            s += k + ":" + str(self[k]) + ", "
+        return s
+    def __getattr__(self,name):
+        return self[name]
+    def __setattr__(self,name,value):
+        self[name] = value
+       
+def query(dbcon, q):
+    db = dbcon.cursor()
+    db.execute(q)
+    i = 0
+    for row in db.fetchall():
+        print(i)
+        for column in row.keys():
+            print("\t",column, row[column])
+        i+=1
 
 
-detector = GenderDetector('us')  # It can also be ar, uk, uy.
+def main():
+    if len(sys.argv) < 2:
+        print("Provide the states you want on the command line as two-letter abbreviations")
+        print("Like so: python main.py MA NH ME")
+        print("(Don't go over four states or so)")
+        sys.exit(1)
+    states = sys.argv[1:] #provide the states you want on the command line like "python main.py MA NH ME"
+    mustcreatedb = not os.path.isfile("uls.db")
+    dbcon = sqlite3.connect('uls.db')
+    dbcon.row_factory = LicenseeRow #each row returned should be of this class
+    if mustcreatedb:
+        create_db(dbcon)
+    import_data(dbcon)
+    active_licenses = set()
+    db = dbcon.cursor()
 
-search = SearchEngine(simple_zipcode=False)  # zipcode demographics lookup
+    # s="select HD.callsign, EN.firstname, EN.lastname, AM.operatorclass from HD inner join EN on HD.id=EN.id inner join AM on HD.id=AM.id where "+\
+        # "HD.radioservicecode in ('HV','HA') and HD.licensestatus='A' and EN.entitytype='L' and EN.applicanttypecode='I' and EN.city='Chelmsford' and EN.state='MA'"
+    # query(dbcon,s)
+    # import pdb; pdb.set_trace()
 
-unknown_names = open(r"C:/Users/Kindl/OneDrive/Documents/Amateur-Radio-Demographics/unknown_names.dat", "w+")
+    s="select HD.callsign, EN.firstname, EN.city, EN.state, EN.zipcode from HD inner join EN on HD.id=EN.id where "+\
+        "HD.radioservicecode in ('HV','HA') and HD.licensestatus='A' and EN.entitytype='L' and EN.applicanttypecode='I'"+\
+        "and EN.state in ("+("?,"*len(states))[:-1] + ")"
+        # "and EN.state in ('MA','NH','ME','CT','RI','NY')"
+        # "and EN.state in ('FL','AL','GA','MS','SC','LA')"
+        # "and EN.state in ('FL','AL','GA','MS','SC','NC','LA','TN','AR')"
+    detector = GenderDetector('us')  # It can also be ar, uk, uy.
+    search = uszipcode.SearchEngine()  # zipcode demographics lookup
 
-try:
-    with open('C:/Users/Kindl/OneDrive/Documents/Amateur-Radio-Demographics/EN.dat', 'r') as my_file:
-        # pass
+    heat_map_dataframe = pd.DataFrame()
+    heat_map_dictionary = {}
+    errors = []
 
-        male_count = 0
-        female_count = 0
-        other_count = 0
-        unknown_count = 0
-        punch_count = 0
-        white_count = 0
-        black_count = 0
-        american_indian_count = 0
-        asian_count = 0
-        hawaiian_count = 0
-        other_race_count = 0
-        two_or_more_count = 0
-        prob_white = 0.0
-        prob_black = 0.0
-        prob_american_indian = 0.0
-        prob_asian = 0.0
-        prob_hawaiian = 0.0
-        prob_other_race = 0.0
-        prob_two_or_more = 0.0
-        zipcode_fail = 0
-        total_count = 0
-        heat_map_dataframe = pd.DataFrame()
-        heat_map_dictionary = {}
+    i = 0
+    err=0
+    for row in db.execute(s, states):
+        # print(row)
+        zc = search.by_zipcode(row.zipcode[:5])
+        if not zc:
+            # print("no zc for row.zipcode?", row.zipcode)
+            # errors.append(row)
+            err+=1
+            continue
+        #not all zipcodes have population - about 10 times as many as we don't have zipcode entries for at all
+        #similarly some of our data is bad and the zip code doesn't match the state
+        #either in our zip code db or the fcc db. Not sure which. So just be aware of that.
+        if zc.state != row.state: #drop the mismatched zip-states here so we don't load in hundreds of MB of other state maps
+            err+=1
+            continue
+        if zc.state not in heat_map_dictionary:
+            heat_map_dictionary[zc.state] = {}
+        if zc.zipcode not in heat_map_dictionary[zc.state]:
+            heat_map_dictionary[zc.state][zc.zipcode] = 0
+        heat_map_dictionary[zc.state][zc.zipcode] += 1
+        i+=1
+        # if i > 10000:
+            # break #want faster testing? uncomment
+        if i % 10000 == 0:
+            print(i) #just a progress update
+    print("Rows with mismatched zipcode data or where zipcode isn't in our database: ",err)
+
+    #TODO: global color scaling
+    #TODO: race data where available
+    #TODO: gender guessing
+
+    m = folium.Map(location=[40, -80], zoom_start=4, tiles='Stamen Toner')
+    for state in heat_map_dictionary:
+        print("adding", state)
+        heat_map_dataframe = pd.DataFrame.from_dict(heat_map_dictionary[state], orient='index').reset_index()
+        heat_map_dataframe.columns = ['ZCTA5CE10', 'licensees'] #column headings for ca_california_zip_codes.geojson
+        stategeojson=glob.glob("State-zip-code-GeoJSON/%s*.min.json"%(state.lower()))
+
+        if len(stategeojson):
+            zip_geo = stategeojson[0]
+            print(zip_geo)
+            folium.Choropleth(
+                geo_data=zip_geo,
+                name=state, #this sets the layer name in the layer control
+                data=heat_map_dataframe,
+                columns=["ZCTA5CE10", "licensees"],
+                key_on="feature.properties.ZCTA5CE10",
+                fill_color="YlGn",
+                fill_opacity=0.7,
+                line_opacity=0.2,
+                legend_name="Heat Map %s"%(state),
+            ).add_to(m)
+        else:
+            print("no zip codes outline for ", state)
+    folium.LayerControl().add_to(m)
+    m.save('heatmap.html')
+    webbrowser.open('heatmap.html', new=2)
 
 
-        for my_line in my_file:
-            my_list: list[str] = my_line.split("|")  # bust up the line at the | symbols, makes a list
+if __name__ == "__main__":
+    main()
 
-            if (my_list[4] in active_licenses) and (my_list[5] == "L") and (my_list[23] == "I"):  # active valid individual license? continue
+# unknown_names = open("generated/unknown_names.dat", "w+")
+
+def xyDatatoDict(valuearray):
+    #     [{'key': 'Data', 'values': [{'x': 'White', 'y': 10439}, {'x': 'Black Or African American', 'y': 46},
+    #                                 {'x': 'American Indian Or Alaskan Native', 'y': 60},
+    #                                 {'x': 'Asian', 'y': 93},
+    #                                 {'x': 'Native Hawaiian & Other Pacific Islander', 'y': 2},
+    #                                 {'x': 'Other Race', 'y': 46}, {'x': 'Two Or More Races', 'y': 154}]}]
+    return {x:y for x,y in valuearray}
+    #untested
 
 
-
-                #test zipcode here?
-                # print("zip code is:", my_list[18][:5])
-                # search.by_zipcode(my_list[18])
-                # print(search.by_zipcode(my_list[18]))
-                my_zipcode = search.by_zipcode(my_list[18][:5])
-
-                #     [{'key': 'Data', 'values': [{'x': 'White', 'y': 10439}, {'x': 'Black Or African American', 'y': 46},
-                #                                 {'x': 'American Indian Or Alaskan Native', 'y': 60},
-                #                                 {'x': 'Asian', 'y': 93},
-                #                                 {'x': 'Native Hawaiian & Other Pacific Islander', 'y': 2},
-                #                                 {'x': 'Other Race', 'y': 46}, {'x': 'Two Or More Races', 'y': 154}]}]
+"""
+                # def zipToRaceProbabilities(zc): #zc = zipcode, the object (not a string)
+                    # return {x:y/zc zipDataToDict(zipdata)
 
                 if (my_zipcode.population_by_race == None):
                     zipcode_fail += 1
@@ -91,31 +452,6 @@ try:
                     #print("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=")
 
                 else:
-
-                    # white_count += my_zipcode.population_by_race[0]['values'][0]['y']
-                    # black_count += my_zipcode.population_by_race[0]['values'][1]['y']
-                    # american_indian_count +=my_zipcode.population_by_race[0]['values'][2]['y']
-                    # asian_count += my_zipcode.population_by_race[0]['values'][3]['y']
-                    # hawaiian_count += my_zipcode.population_by_race[0]['values'][4]['y']
-                    # other_race_count += my_zipcode.population_by_race[0]['values'][5]['y']
-                    # two_or_more_count += my_zipcode.population_by_race[0]['values'][6]['y']
-
-                    # print(my_zipcode.population_by_race[0]['values'][0])
-                    # print(my_zipcode.population_by_race[0]['values'][0]['y'])
-                    # print(my_zipcode.population_by_race[0]['values'][1])
-                    # print(my_zipcode.population_by_race[0]['values'][1]['y'])
-                    # print(my_zipcode.population_by_race[0]['values'][2])
-                    # print(my_zipcode.population_by_race[0]['values'][2]['y'])
-                    # print(my_zipcode.population_by_race[0]['values'][3])
-                    # print(my_zipcode.population_by_race[0]['values'][3]['y'])
-                    # print(my_zipcode.population_by_race[0]['values'][4])
-                    # print(my_zipcode.population_by_race[0]['values'][4]['y'])
-                    # print(my_zipcode.population_by_race[0]['values'][5])
-                    # print(my_zipcode.population_by_race[0]['values'][5]['y'])
-                    # print(my_zipcode.population_by_race[0]['values'][6])
-                    # print(my_zipcode.population_by_race[0]['values'][6]['y'])
-                    # print(my_zipcode.population)
-
                     prob_white = my_zipcode.population_by_race[0]['values'][0]['y'] / my_zipcode.population
                     # print(prob_white)
                     prob_black = my_zipcode.population_by_race[0]['values'][1]['y'] / my_zipcode.population
@@ -153,19 +489,6 @@ try:
                         print("You have fallen through the race test crack.")
                         print("Random number is:", random_number)
 
-
-
-                    if ((my_list[18][:5])) in heat_map_dictionary:
-                        heat_map_dictionary[(my_list[18][:5])] += 1
-                    else:
-                        heat_map_dictionary[(my_list[18][:5])] = 1
-
-                    #print(heat_map_dictionary)
-
-
-
-
-
                 if (my_list[8].startswith('(')) or (my_list[8] == ".") or (my_list[8] == ",") or (my_list[8] == ""):
                     # can't analyze these for name
                     punch_count += 1
@@ -178,7 +501,6 @@ try:
                     # but really should write a test for this.
 
                     # wrote a test for "," and for ".", and for "".
-
 
                     my_gender = (detector.guess(my_list[8]))
                     if my_gender == "male":
@@ -195,12 +517,7 @@ try:
                         # write these names to a file
                         # for further processing
 
-
-
-
                 total_count += 1
-
-
 
             else:
                 other_count += 1
@@ -269,3 +586,5 @@ try:
 
 except FileNotFoundError:
     pass
+
+"""

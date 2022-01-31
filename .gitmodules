@@ -1,0 +1,3 @@
+[submodule "State-zip-code-GeoJSON"]
+	path = State-zip-code-GeoJSON
+	url = git@github.com:OpenDataDE/State-zip-code-GeoJSON.git
