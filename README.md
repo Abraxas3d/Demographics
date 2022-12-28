@@ -1,6 +1,9 @@
 # Demographics
 US Amateur License Holders Demographics
 
+Paper about this work:
+https://github.com/Abraxas3d/Demographics/blob/master/Who-We-Are.pdf
+
 Video presentation at [RATPAC 26 January 2022](https://youtu.be/hrGsTKFp_HU)
 
 This is a python script that uses the publicly available FCC database as
